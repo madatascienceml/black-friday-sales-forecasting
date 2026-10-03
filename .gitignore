@@ -1,0 +1,32 @@
+# Datos: no se versionan (se conserva solo la carpeta processed vacía)
+Data/*
+!Data/processed/
+Data/processed/*
+!Data/processed/.gitkeep
+
+# Modelos entrenados (binarios pesados y reproducibles desde el código)
+models/*
+!models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

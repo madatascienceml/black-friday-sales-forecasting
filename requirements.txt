@@ -1,0 +1,17 @@
+# Núcleo de datos y visualización
+pandas
+numpy
+matplotlib
+seaborn
+
+# Modelado
+scikit-learn
+xgboost
+optuna
+
+# Calendario / festivos (features de Black Friday)
+holidays
+
+# Entorno de trabajo y app
+jupyter
+streamlit
