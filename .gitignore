@@ -1,8 +1,8 @@
 # Datos: no se versionan (se conserva solo la carpeta processed vacía)
-Data/*
-!Data/processed/
-Data/processed/*
-!Data/processed/.gitkeep
+data/*
+!data/processed/
+data/processed/*
+!data/processed/.gitkeep
 
 # Modelos entrenados (binarios pesados y reproducibles desde el código)
 models/*
