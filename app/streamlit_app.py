@@ -3,21 +3,26 @@
 Run from the project root:
     streamlit run app/streamlit_app.py
 """
+import sys
 from pathlib import Path
 
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 import streamlit as st
 
+# Make the project root importable so `src` can be found when running `streamlit run app/streamlit_app.py`
+RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+from src.forecasting import recursive_forecast  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Paths (resolved from this file, not from the working directory)
 # ---------------------------------------------------------------------------
-RAIZ = Path(__file__).resolve().parent.parent
-RUTA_MODELO = RAIZ / "models" / "modelo_final.joblib"
-RUTA_DATOS = RAIZ / "data" / "processed" / "inferencia_df_transformado.csv"
+RUTA_MODELO = RAIZ / "models" / "pipeline_final_tuned.joblib"
+RUTA_DATOS = RAIZ / "data" / "processed" / "inferencia_df_sin_onehot.csv"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -26,8 +31,6 @@ MORADO = "#764ba2"
 AZUL = "#667eea"
 ROJO = "#e63946"
 FECHA_BLACK_FRIDAY = pd.Timestamp("2025-11-28")
-LAGS = [f"unidades_lag_{k}" for k in range(1, 8)]
-MEDIA_MOVIL = "unidades_media_movil_7"
 ESCENARIOS = {
     "Actual (0%)": 1.00,
     "Competencia -5%": 0.95,
@@ -69,6 +72,9 @@ def cargar_modelo(ruta):
 @st.cache_data(show_spinner=False)
 def cargar_datos(ruta):
     datos = pd.read_csv(ruta, parse_dates=["fecha"])
+    # Numeric and boolean columns as float, like in training (the text columns are encoded by the pipeline)
+    numericas = datos.select_dtypes(include=["number", "bool"]).columns
+    datos[numericas] = datos[numericas].astype(float)
     return datos.sort_values(["producto_id", "fecha"]).reset_index(drop=True)
 
 
@@ -77,7 +83,6 @@ def cargar_datos(ruta):
 # ---------------------------------------------------------------------------
 def simular_producto(modelo, datos_producto, descuento, factor_competencia):
     """Recursive 30-day forecast for one product, one discount and one scenario."""
-    columnas = list(modelo.feature_names_in_)
     sim = datos_producto.sort_values("fecha").reset_index(drop=True).copy()
 
     # Only what depends on the controls is recalculated
@@ -86,24 +91,8 @@ def simular_producto(modelo, datos_producto, descuento, factor_competencia):
     sim["precio_competencia"] = sim["precio_competencia"] * factor_competencia
     sim["ratio_precio"] = sim["precio_venta"] / sim["precio_competencia"]
 
-    # Float columns so the recursion can overwrite lags without dtype issues
-    for col in LAGS + [MEDIA_MOVIL]:
-        sim[col] = sim[col].astype(float)
-
-    predicciones = np.zeros(len(sim))
-    for i in range(len(sim)):
-        if i > 0:
-            # lag_1 = previous prediction; lag_k = previous day's lag_(k-1)
-            previos = sim.loc[i - 1, LAGS].to_numpy(dtype=float)
-            nuevos = np.concatenate(([predicciones[i - 1]], previos[:-1]))
-            sim.loc[i, LAGS] = nuevos
-            # Moving average = mean of the 7 already-updated lags
-            sim.loc[i, MEDIA_MOVIL] = nuevos.mean()
-
-        fila = sim.loc[[i], columnas]
-        predicciones[i] = max(float(modelo.predict(fila)[0]), 0.0)
-
-    sim["unidades_predichas"] = predicciones
+    # Recursive prediction (lags and moving average rebuilt from the predictions) in src/forecasting.py
+    sim = recursive_forecast(modelo, sim).sort_values("fecha").reset_index(drop=True)
     sim["ingresos_dia"] = sim["unidades_predichas"] * sim["precio_venta"]
     return sim
 
