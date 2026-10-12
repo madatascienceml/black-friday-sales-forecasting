@@ -55,6 +55,7 @@ On Black Friday 2024 the peak is still underestimated (real: 450 units across th
 ## Limitations
 
 - **The simulator does not measure real price elasticity.** It shows how the model responds to a price plan. Both models agree on the direction of most scenarios but differ in magnitude, and sometimes in sign (for example, a −10 % discount over Black Friday week). A month-long discount is outside anything the model saw in training and is flagged as such in the app.
+- **Competitor-price response is asymmetric for at least one product.** For Pegasus 40, a +5 % competitor-price scenario yields ~515 predicted units versus ~400 for a −5 % scenario — a wider swing than a modest price change would intuitively justify. This is most likely a model artifact driven by sparse competitor-price variation in the training data (the same underlying issue as the discount/Black Friday confound above), not a real causal price elasticity. Treat competitor-price outputs from the simulator as directional, not quantitative.
 - **One validation year.** 2024 was also used to choose the original conservative hyperparameters, and again for the seed check. The tuned model's search itself used only 2021–2023.
 - **Seed variance.** The tuned model's recursive WMAPE varies by about ±2.5 pp across seeds.
 - **Peaks are underestimated.** Black Friday volumes are lower than real values for star products, even in the one-step evaluation.
