@@ -1,10 +1,8 @@
-# Datos: no se versionan (se conserva solo la carpeta processed vacía)
-data/*
-!data/processed/
+# Datos: data/raw (sintéticos) se versiona; data/processed se regenera con los notebooks
 data/processed/*
 !data/processed/.gitkeep
 
-# Modelos entrenados (binarios pesados y reproducibles desde el código)
+# Modelo entrenado y columnas one-hot: se regeneran al ejecutar los notebooks
 models/*
 !models/.gitkeep
 
