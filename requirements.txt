@@ -1,17 +1,10 @@
-# Núcleo de datos y visualización
-pandas
-numpy
-matplotlib
-seaborn
-
-# Modelado
-scikit-learn
-xgboost
-optuna
-
-# Calendario / festivos (features de Black Friday)
-holidays
-
-# Entorno de trabajo y app
-jupyter
-streamlit
+# Exact versions of the libraries imported by the notebooks and the Streamlit app (full freeze in requirements-lock.txt)
+holidays==0.105
+joblib==1.6.0
+matplotlib==3.11.2
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+seaborn==0.13.2
+streamlit==1.65.0
+ipykernel==7.4.0

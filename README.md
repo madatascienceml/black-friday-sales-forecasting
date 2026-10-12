@@ -42,11 +42,15 @@ Validated on a full held-out year (2024), the model reaches **MAE 1.08 units/day
 
 ## How to run
 
+Developed and tested with Python 3.13.9.
+
 ```bash
 conda create -n forecasting python=3.13
 conda activate forecasting
 pip install -r requirements.txt
 ```
+
+> `requirements.txt` is the portable installation (only the libraries the code imports, with pinned versions). `requirements-lock.txt` is the exact environment used on Windows (full `pip freeze`, including Windows-specific packages).
 
 1. Place the raw CSVs in `data/raw/entrenamiento/` and `data/raw/inferencia/` (data, processed files and models are git-ignored).
 2. Run `notebooks/entrenamiento.ipynb` — EDA, feature engineering, validation, final model (saved to `models/modelo_final.joblib`).
