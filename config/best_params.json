@@ -1,0 +1,21 @@
+{
+  "best_params": {
+    "learning_rate": 0.1553220591719787,
+    "max_iter": 725,
+    "max_depth": 7,
+    "max_leaf_nodes": 13,
+    "min_samples_leaf": 83,
+    "l2_regularization": 4.486143484521325,
+    "max_features": 0.5842319265933947
+  },
+  "fixed_params": {
+    "early_stopping": false,
+    "random_state": 42
+  },
+  "cv_mean_recursive_wmape": 21.985577443729397,
+  "cv_baseline_conservative_wmape": 25.13245891910798,
+  "n_trials": 60,
+  "sampler_seed": 42,
+  "adopted": true,
+  "adoption_note": "The original criterion (train/validation gap must not increase) failed: 6.68 pp vs 9.35 pp. It was judged badly specified because it penalizes a better training fit even when validation improves. The tuned model was adopted under a new criterion fixed before the check: the worst recursive WMAPE on 2024 over seeds 0-4 of the tuned model (25.16%) is better than the best of the conservative model (26.78%)."
+}

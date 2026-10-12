@@ -3,21 +3,27 @@
 Run from the project root:
     streamlit run app/streamlit_app.py
 """
+import sys
 from pathlib import Path
 
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 import streamlit as st
 
+# Make the project root importable so `src` can be found when running `streamlit run app/streamlit_app.py`
+RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+from src.forecasting import recursive_forecast  # noqa: E402
+from src.simulation import apply_price_plan  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Paths (resolved from this file, not from the working directory)
 # ---------------------------------------------------------------------------
-RAIZ = Path(__file__).resolve().parent.parent
-RUTA_MODELO = RAIZ / "models" / "modelo_final.joblib"
-RUTA_DATOS = RAIZ / "data" / "processed" / "inferencia_df_transformado.csv"
+RUTA_MODELO = RAIZ / "models" / "pipeline_final_tuned.joblib"
+RUTA_DATOS = RAIZ / "data" / "processed" / "inferencia_df_sin_onehot.csv"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -26,8 +32,6 @@ MORADO = "#764ba2"
 AZUL = "#667eea"
 ROJO = "#e63946"
 FECHA_BLACK_FRIDAY = pd.Timestamp("2025-11-28")
-LAGS = [f"unidades_lag_{k}" for k in range(1, 8)]
-MEDIA_MOVIL = "unidades_media_movil_7"
 ESCENARIOS = {
     "Actual (0%)": 1.00,
     "Competencia -5%": 0.95,
@@ -37,6 +41,12 @@ TITULOS_ESCENARIO = {
     "Actual (0%)": "Sin cambios (0%)",
     "Competencia -5%": "Competencia baja (-5%)",
     "Competencia +5%": "Competencia alta (+5%)",
+}
+VENTANAS = {
+    "Plan actual": "plan",
+    "Solo Black Friday": "black_friday",
+    "Semana de Black Friday": "black_friday_week",
+    "Todo noviembre": "november",
 }
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
@@ -51,6 +61,12 @@ def fmt_num(valor, decimales=0):
 
 def fmt_euros(valor, decimales=2):
     return f"{fmt_num(valor, decimales)} €"
+
+
+def fmt_delta(valor, decimales=0):
+    # Signed difference with Spanish number style
+    texto = fmt_num(abs(valor), decimales)
+    return texto if round(valor, decimales) == 0 else ("+" if valor > 0 else "-") + texto
 
 
 def fmt_descuento(valor):
@@ -69,41 +85,24 @@ def cargar_modelo(ruta):
 @st.cache_data(show_spinner=False)
 def cargar_datos(ruta):
     datos = pd.read_csv(ruta, parse_dates=["fecha"])
+    # Numeric and boolean columns as float, like in training (the text columns are encoded by the pipeline)
+    numericas = datos.select_dtypes(include=["number", "bool"]).columns
+    datos[numericas] = datos[numericas].astype(float)
     return datos.sort_values(["producto_id", "fecha"]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
 # Recursive prediction (no UI, testable)
 # ---------------------------------------------------------------------------
-def simular_producto(modelo, datos_producto, descuento, factor_competencia):
-    """Recursive 30-day forecast for one product, one discount and one scenario."""
-    columnas = list(modelo.feature_names_in_)
-    sim = datos_producto.sort_values("fecha").reset_index(drop=True).copy()
+def simular_producto(modelo, datos_producto, ventana, descuento, factor_competencia):
+    """Recursive 30-day forecast for one product, one price window, one discount and one scenario."""
+    sim = datos_producto.sort_values("fecha").reset_index(drop=True)
 
-    # Only what depends on the controls is recalculated
-    sim["descuento_porcentaje"] = float(descuento)
-    sim["precio_venta"] = sim["precio_base"] * (1 + descuento / 100)
-    sim["precio_competencia"] = sim["precio_competencia"] * factor_competencia
-    sim["ratio_precio"] = sim["precio_venta"] / sim["precio_competencia"]
+    # Only what depends on the controls is recalculated (the discount only on the days of the window)
+    sim = apply_price_plan(sim, ventana, descuento, factor_competencia)
 
-    # Float columns so the recursion can overwrite lags without dtype issues
-    for col in LAGS + [MEDIA_MOVIL]:
-        sim[col] = sim[col].astype(float)
-
-    predicciones = np.zeros(len(sim))
-    for i in range(len(sim)):
-        if i > 0:
-            # lag_1 = previous prediction; lag_k = previous day's lag_(k-1)
-            previos = sim.loc[i - 1, LAGS].to_numpy(dtype=float)
-            nuevos = np.concatenate(([predicciones[i - 1]], previos[:-1]))
-            sim.loc[i, LAGS] = nuevos
-            # Moving average = mean of the 7 already-updated lags
-            sim.loc[i, MEDIA_MOVIL] = nuevos.mean()
-
-        fila = sim.loc[[i], columnas]
-        predicciones[i] = max(float(modelo.predict(fila)[0]), 0.0)
-
-    sim["unidades_predichas"] = predicciones
+    # Recursive prediction (lags and moving average rebuilt from the predictions) in src/forecasting.py
+    sim = recursive_forecast(modelo, sim).sort_values("fecha").reset_index(drop=True)
     sim["ingresos_dia"] = sim["unidades_predichas"] * sim["precio_venta"]
     return sim
 
@@ -216,11 +215,25 @@ def main():
         st.title("Controles de Simulación")
         nombre = st.selectbox("📦 Selecciona el producto", productos["nombre"].tolist())
         st.divider()
+        nombre_ventana = st.selectbox(
+            "🗓️ Días con descuento", list(VENTANAS.keys()),
+            help="Días de noviembre en los que se aplica el descuento. 'Plan actual' mantiene los precios previstos del archivo.",
+        )
+        ventana = VENTANAS[nombre_ventana]
         descuento = st.slider(
             "💰 Ajuste de Descuento",
             min_value=-50, max_value=50, value=0, step=5, format="%d%%",
-            help="Misma convención que el entrenamiento: negativo = descuento, positivo = recargo.",
+            disabled=ventana == "plan",
+            help="Misma convención que el entrenamiento: negativo = descuento, positivo = recargo. "
+                 "Solo se aplica cuando eliges unos días distintos de 'Plan actual'.",
         )
+        if ventana != "plan":
+            st.caption(
+                "El descuento elegido sustituye al del plan en los días de la ventana: por eso un descuento "
+                "menor que el del plan (por ejemplo, -10% frente al -15% de Black Friday) reduce las unidades."
+            )
+        # With the current plan the slider has no effect
+        descuento = 0 if ventana == "plan" else descuento
         st.divider()
         escenario = st.radio(
             "🏪 Escenario de Competencia", list(ESCENARIOS.keys()),
@@ -236,11 +249,14 @@ def main():
                 producto_id = productos.loc[productos["nombre"] == nombre, "producto_id"].iloc[0]
                 datos_producto = datos[datos["producto_id"] == producto_id]
                 resultados = {
-                    nom: simular_producto(modelo, datos_producto, descuento, factor)
+                    nom: simular_producto(modelo, datos_producto, ventana, descuento, factor)
                     for nom, factor in ESCENARIOS.items()
                 }
+                # Reference: the current price plan of the file with the current competition
+                base = simular_producto(modelo, datos_producto, "plan", 0, 1.0)
             st.session_state["sim"] = {
-                "nombre": nombre, "descuento": descuento, "escenario": escenario, "resultados": resultados,
+                "nombre": nombre, "ventana": ventana, "nombre_ventana": nombre_ventana, "descuento": descuento,
+                "escenario": escenario, "resultados": resultados, "base": base,
             }
         except Exception as e:  # noqa: BLE001
             st.error(f"❌ Error durante la predicción: {e}")
@@ -263,14 +279,17 @@ def main():
 
     sim = estado["resultados"][estado["escenario"]]
     r = resumen(sim)
+    r_base = resumen(estado["base"])
 
-    if (estado["nombre"], estado["descuento"], estado["escenario"]) != (nombre, descuento, escenario):
+    if (estado["nombre"], estado["ventana"], estado["descuento"], estado["escenario"]) != (nombre, ventana, descuento, escenario):
         st.info("ℹ️ Has cambiado los controles: pulsa **Simular Ventas** para actualizar los resultados.")
 
     # (1) Header
     st.markdown(
         f'<div class="cabecera"><h1>📈 {estado["nombre"]}</h1>'
-        f'<p>Simulación noviembre 2025 · Descuento {fmt_descuento(estado["descuento"])} · {estado["escenario"]}</p></div>',
+        f'<p>Simulación noviembre 2025 · {estado["nombre_ventana"]}'
+        + ("" if estado["ventana"] == "plan" else f' · Descuento {fmt_descuento(estado["descuento"])}')
+        + f' · {estado["escenario"]}</p></div>',
         unsafe_allow_html=True,
     )
 
@@ -278,10 +297,13 @@ def main():
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         "🛒 Unidades totales", fmt_num(r["unidades"]),
-        help="Suma de las unidades predichas por el modelo para los 30 días de noviembre.",
+        delta=fmt_delta(r["unidades"] - r_base["unidades"]) + " vs plan actual",
+        help="Suma de las unidades predichas por el modelo para los 30 días de noviembre. "
+             "La diferencia se calcula respecto al plan actual de precios con la competencia actual.",
     )
     c2.metric(
         "💶 Ingresos proyectados", fmt_euros(r["ingresos"]),
+        delta=fmt_delta(r["ingresos"] - r_base["ingresos"], 2) + " € vs plan actual",
         help="Suma diaria de unidades predichas por precio de venta.",
     )
     c3.metric(
@@ -294,11 +316,20 @@ def main():
     )
 
     # Training-range and recursion warnings
-    if not -15 <= estado["descuento"] <= 3:
+    if estado["ventana"] == "november":
+        st.error(
+            "🚨 **Cuidado:** el modelo no vio descuentos así fuera de la semana de Black Friday "
+            "(24-30 de noviembre). Aplicarlos todo el mes es una situación que nunca ha visto: "
+            "las unidades resultantes no son fiables."
+        )
+    if estado["ventana"] != "plan" and not -15 <= estado["descuento"] <= 3:
         st.warning(
             "⚠️ Los descuentos del entrenamiento iban de -15% a +3%. Fuera de ese rango "
             "el modelo no extrapola: la respuesta de las ventas no será fiable."
         )
+    st.caption(
+        "ℹ️ El simulador muestra la respuesta del modelo a un plan de precios, no una elasticidad causal."
+    )
     st.caption(
         "🔁 La predicción es recursiva (cada día usa las predicciones anteriores como lags), "
         "por lo que los errores se acumulan a lo largo del mes."
@@ -343,14 +374,18 @@ def main():
 
     # (5) Scenario comparison
     st.subheader("🔄 Comparativa de escenarios de competencia")
-    st.caption(f"Manteniendo el descuento elegido ({fmt_descuento(estado['descuento'])}).")
+    st.caption(
+        "Con el plan actual de precios."
+        if estado["ventana"] == "plan"
+        else f"Manteniendo el descuento elegido ({fmt_descuento(estado['descuento'])}) · {estado['nombre_ventana']}."
+    )
     columnas = st.columns(len(ESCENARIOS))
     for col, (nom, sim_esc) in zip(columnas, estado["resultados"].items()):
         res = resumen(sim_esc)
         with col:
             st.markdown(f"**{TITULOS_ESCENARIO[nom]}**" + ("  ✅" if nom == estado["escenario"] else ""))
-            st.metric("Unidades totales", fmt_num(res["unidades"]))
-            st.metric("Ingresos", fmt_euros(res["ingresos"]))
+            st.metric("Unidades totales", fmt_num(res["unidades"]), delta=fmt_delta(res["unidades"] - r_base["unidades"]))
+            st.metric("Ingresos", fmt_euros(res["ingresos"]), delta=fmt_delta(res["ingresos"] - r_base["ingresos"], 2) + " €")
 
 
 if __name__ == "__main__":
