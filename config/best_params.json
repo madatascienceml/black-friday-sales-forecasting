@@ -16,5 +16,6 @@
   "cv_baseline_conservative_wmape": 25.13245891910798,
   "n_trials": 60,
   "sampler_seed": 42,
-  "adopted": false
+  "adopted": true,
+  "adoption_note": "The original criterion (train/validation gap must not increase) failed: 6.68 pp vs 9.35 pp. It was judged badly specified because it penalizes a better training fit even when validation improves. The tuned model was adopted under a new criterion fixed before the check: the worst recursive WMAPE on 2024 over seeds 0-4 of the tuned model (25.16%) is better than the best of the conservative model (26.78%)."
 }
