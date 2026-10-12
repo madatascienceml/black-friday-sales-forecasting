@@ -1,0 +1,20 @@
+{
+  "best_params": {
+    "learning_rate": 0.1553220591719787,
+    "max_iter": 725,
+    "max_depth": 7,
+    "max_leaf_nodes": 13,
+    "min_samples_leaf": 83,
+    "l2_regularization": 4.486143484521325,
+    "max_features": 0.5842319265933947
+  },
+  "fixed_params": {
+    "early_stopping": false,
+    "random_state": 42
+  },
+  "cv_mean_recursive_wmape": 21.985577443729397,
+  "cv_baseline_conservative_wmape": 25.13245891910798,
+  "n_trials": 60,
+  "sampler_seed": 42,
+  "adopted": false
+}
